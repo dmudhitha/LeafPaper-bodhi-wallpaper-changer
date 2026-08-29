@@ -1,0 +1,310 @@
+#!/usr/bin/env python3
+"""
+Bodhi Wallpaper - Master CLI and Application Launcher
+Tailored for Bodhi Linux and Moksha Desktop.
+"""
+
+import os
+import sys
+import argparse
+import subprocess
+import json
+
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, APP_DIR)
+
+from bodhi_wallpaper_engine import (
+    BodhiWallpaperEngine,
+    send_ipc_command
+)
+
+VERSION = "1.0.0"
+
+
+def print_status():
+    resp = send_ipc_command("STATUS")
+    if resp:
+        try:
+            data = json.loads(resp)
+            print("========================================")
+            print("  Bodhi Wallpaper Service Status")
+            print("========================================")
+            print(f"Daemon Status:      Running")
+            print(f"Slideshow State:    {'Paused' if data.get('paused') else 'Active'}")
+            print(f"Current Wallpaper:  {data.get('current') or 'Not set'}")
+            print(f"Scaling Style:      {data.get('style', 'zoom')}")
+            print(f"Auto-Change:        {'Enabled' if data.get('auto_change') else 'Disabled'}")
+            print(f"Interval:           {data.get('interval_minutes')} minutes")
+            if data.get('seconds_until_next') is not None:
+                mins = data['seconds_until_next'] // 60
+                secs = data['seconds_until_next'] % 60
+                print(f"Next Change In:     {mins}m {secs}s")
+            print(f"Rotation Order:     {'Random' if data.get('random_order') else 'Sequential'}")
+            print("========================================")
+            return
+        except Exception:
+            pass
+
+    engine = BodhiWallpaperEngine()
+    print("========================================")
+    print("  Bodhi Wallpaper Service Status")
+    print("========================================")
+    print("Daemon Status:      Inactive (Not running)")
+    print(f"Current Wallpaper:  {engine.config.get('current_wallpaper') or 'Not set'}")
+    print(f"Scaling Style:      {engine.config.get('style', 'zoom')}")
+    print(f"Configured Folders: {len(engine.config.get('folders', []))}")
+    print("========================================")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="bodhi-wallpaper",
+        description="Wallpaper changer and slideshow manager for Bodhi Linux (Moksha Desktop)."
+    )
+
+    parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {VERSION}")
+    parser.add_argument("--gui", action="store_true", help="Launch graphical user interface (default if no args)")
+    parser.add_argument("--preferences", action="store_true", help="Open GUI preferences dialog directly")
+    parser.add_argument("--set", metavar="IMAGE", help="Set wallpaper to specified image or .edj file")
+    parser.add_argument("--style", choices=["zoom", "fit", "stretch", "center", "tile"],
+                        default=None, help="Scaling style for image wallpapers (default: zoom)")
+    parser.add_argument("--next", action="store_true", help="Switch to next wallpaper")
+    parser.add_argument("--prev", action="store_true", help="Switch to previous wallpaper")
+    parser.add_argument("--random", action="store_true", help="Switch to a random wallpaper")
+    parser.add_argument("--daemon", action="store_true", help="Run as background rotation daemon")
+    parser.add_argument("--tray", action="store_true", help="Run system tray applet")
+    parser.add_argument("--pause", action="store_true", help="Pause automated slideshow")
+    parser.add_argument("--resume", action="store_true", help="Resume automated slideshow")
+    parser.add_argument("--toggle-pause", action="store_true", help="Toggle slideshow pause state")
+    parser.add_argument("--status", action="store_true", help="Show current wallpaper and daemon status")
+    parser.add_argument("--list", action="store_true", help="List all detected wallpapers")
+    parser.add_argument("--add-folder", metavar="PATH", help="Add a directory to wallpaper sources")
+    parser.add_argument("--remove-folder", metavar="PATH", help="Remove a directory from wallpaper sources")
+    parser.add_argument("--bing-daily", action="store_true", help="Download and apply today's Bing Daily wallpaper")
+    parser.add_argument("--picsum", action="store_true", help="Download and apply a curated 5K photography wallpaper from Picsum")
+    parser.add_argument("--wikimedia", action="store_true", help="Download and apply an award-winning featured picture from Wikimedia Commons")
+    parser.add_argument("--openverse", metavar="QUERY", help="Search and apply a wallpaper from Openverse Creative Commons library")
+    parser.add_argument("--online-category", metavar="CATEGORY",
+                        help="Download & apply wallpaper from category (e.g. nature, space, cyberpunk, anime, cars, minimalism)")
+    parser.add_argument("--online-search", metavar="QUERY", help="Search and apply a wallpaper from Wallhaven")
+
+    args = parser.parse_args()
+
+    engine = BodhiWallpaperEngine()
+
+    # 1. Daemon Mode
+    if args.daemon:
+        from bodhi_wallpaper_daemon import BodhiWallpaperDaemon
+        daemon = BodhiWallpaperDaemon()
+        daemon.start()
+        return
+
+    # 2. Tray Mode
+    if args.tray:
+        from bodhi_wallpaper_tray import BodhiWallpaperTray
+        tray = BodhiWallpaperTray()
+        tray.run()
+        return
+
+    # 3. Next Wallpaper
+    if args.next:
+        resp = send_ipc_command("NEXT")
+        if resp and resp.startswith("OK "):
+            print(f"Applied next wallpaper: {resp[3:]}")
+        else:
+            nxt = engine.get_next_wallpaper(forward=True)
+            if nxt:
+                engine.apply_wallpaper(nxt)
+                print(f"Applied next wallpaper: {nxt}")
+            else:
+                print("Error: No wallpapers found in configured directories.", file=sys.stderr)
+                sys.exit(1)
+        return
+
+    # 4. Previous Wallpaper
+    if args.prev:
+        resp = send_ipc_command("PREV")
+        if resp and resp.startswith("OK "):
+            print(f"Applied previous wallpaper: {resp[3:]}")
+        else:
+            prev = engine.get_next_wallpaper(forward=False)
+            if prev:
+                engine.apply_wallpaper(prev)
+                print(f"Applied previous wallpaper: {prev}")
+            else:
+                print("Error: No wallpapers found in configured directories.", file=sys.stderr)
+                sys.exit(1)
+        return
+
+    # 5. Random Wallpaper
+    if args.random:
+        resp = send_ipc_command("RANDOM")
+        if resp and resp.startswith("OK "):
+            print(f"Applied random wallpaper: {resp[3:]}")
+        else:
+            rnd = engine.get_random_wallpaper()
+            if rnd:
+                engine.apply_wallpaper(rnd)
+                print(f"Applied random wallpaper: {rnd}")
+            else:
+                print("Error: No wallpapers found in configured directories.", file=sys.stderr)
+                sys.exit(1)
+        return
+
+    # 6. Set specific wallpaper
+    if args.set:
+        target = os.path.abspath(os.path.expanduser(args.set))
+        if not os.path.exists(target):
+            print(f"Error: File not found: {target}", file=sys.stderr)
+            sys.exit(1)
+
+        style = args.style or engine.config.get("style", "zoom")
+        resp = send_ipc_command(f"SET {target} {style}")
+        if resp and resp.startswith("OK "):
+            print(f"Wallpaper successfully applied: {target} (style: {style})")
+        else:
+            try:
+                engine.apply_wallpaper(target, style=style)
+                print(f"Wallpaper successfully applied: {target} (style: {style})")
+            except Exception as e:
+                print(f"Error applying wallpaper: {e}", file=sys.stderr)
+                sys.exit(1)
+        return
+
+    # 7. Pause / Resume / Toggle
+    if args.pause:
+        resp = send_ipc_command("PAUSE")
+        print(resp or "Daemon is not running.")
+        return
+
+    if args.resume:
+        resp = send_ipc_command("RESUME")
+        print(resp or "Daemon is not running.")
+        return
+
+    if args.toggle_pause:
+        resp = send_ipc_command("TOGGLE_PAUSE")
+        print(resp or "Daemon is not running.")
+        return
+
+    # 8. Status
+    if args.status:
+        print_status()
+        return
+
+    # 9. List Wallpapers
+    if args.list:
+        wallpapers = engine.scan_wallpapers()
+        print(f"Discovered {len(wallpapers)} wallpapers:")
+        for w in wallpapers:
+            print(f"  {w}")
+        return
+
+    # 10. Folder Management
+    if args.add_folder:
+        if engine.add_folder(args.add_folder):
+            print(f"Added folder: {args.add_folder}")
+            send_ipc_command("RELOAD")
+        else:
+            print(f"Error: Could not add directory {args.add_folder}", file=sys.stderr)
+        return
+
+    if args.remove_folder:
+        if engine.remove_folder(args.remove_folder):
+            print(f"Removed folder: {args.remove_folder}")
+            send_ipc_command("RELOAD")
+        else:
+            print(f"Error: Folder {args.remove_folder} was not found in config.", file=sys.stderr)
+        return
+
+    # 11. Online Wallpaper Operations
+    if args.bing_daily:
+        from bodhi_wallpaper_online import OnlineWallpaperManager
+        mgr = OnlineWallpaperManager()
+        items = mgr.fetch_bing_daily(count=1)
+        if items:
+            print(f"Fetching Bing Daily: {items[0]['title']}...")
+            path = mgr.download_and_apply(items[0], engine, style=args.style or "zoom")
+            print(f"Applied Bing Daily wallpaper: {items[0]['title']} ({path})")
+        else:
+            print("Failed to fetch Bing Daily wallpaper.", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    if args.picsum:
+        from bodhi_wallpaper_online import OnlineWallpaperManager
+        import random
+        mgr = OnlineWallpaperManager()
+        page = random.randint(1, 10)
+        items = mgr.fetch_picsum(page=page, count=12)
+        if items:
+            pick = random.choice(items)
+            print(f"Downloading {pick['title']} ({pick['resolution']})...")
+            path = mgr.download_and_apply(pick, engine, style=args.style or "zoom")
+            print(f"Applied Picsum wallpaper: {pick['title']} ({path})")
+        else:
+            print("Failed to fetch photo from Picsum.", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    if args.wikimedia:
+        from bodhi_wallpaper_online import OnlineWallpaperManager
+        import random
+        mgr = OnlineWallpaperManager()
+        items = mgr.fetch_wikimedia_featured(count=15)
+        if items:
+            pick = random.choice(items)
+            print(f"Downloading {pick['title']} ({pick['resolution']})...")
+            path = mgr.download_and_apply(pick, engine, style=args.style or "zoom")
+            print(f"Applied Wikimedia wallpaper: {pick['title']} ({path})")
+        else:
+            print("Failed to fetch picture from Wikimedia.", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    if args.openverse:
+        from bodhi_wallpaper_online import OnlineWallpaperManager
+        mgr = OnlineWallpaperManager()
+        print(f"Searching Openverse for '{args.openverse}'...")
+        items = mgr.fetch_openverse(query=args.openverse, count=10)
+        if items:
+            pick = items[0]
+            print(f"Downloading {pick['title']} ({pick['resolution']})...")
+            path = mgr.download_and_apply(pick, engine, style=args.style or "zoom")
+            print(f"Applied Openverse wallpaper: {pick['title']} ({path})")
+        else:
+            print("No wallpapers found on Openverse for query.", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    if args.online_category or args.online_search:
+        from bodhi_wallpaper_online import OnlineWallpaperManager
+        mgr = OnlineWallpaperManager()
+        if args.online_category:
+            cat = args.online_category.lower()
+            print(f"Searching online for category '{cat}'...")
+            items = mgr.search_wallhaven(category_key=cat, sorting="random")
+        else:
+            print(f"Searching online for '{args.online_search}'...")
+            items = mgr.search_wallhaven(query=args.online_search, sorting="toplist")
+
+        if items:
+            pick = items[0]
+            print(f"Downloading {pick['title']} ({pick['resolution']})...")
+            path = mgr.download_and_apply(pick, engine, style=args.style or "zoom")
+            print(f"Applied online wallpaper: {pick['title']} ({path})")
+        else:
+            print("No online wallpapers found for the given search/category.", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    # 12. Launch GUI (default)
+    gui_script = os.path.join(APP_DIR, "bodhi_wallpaper_gui.py")
+    cmd = ["python3", gui_script]
+    if args.preferences:
+        cmd.append("--preferences")
+    os.execv(sys.executable, cmd)
+
+
+if __name__ == "__main__":
+    main()

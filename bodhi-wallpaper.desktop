@@ -1,0 +1,24 @@
+[Desktop Entry]
+Name=LeafPaper - Bodhi Wallpaper Changer
+GenericName=Wallpaper Manager
+Comment=Change desktop wallpapers, download online wallpapers, and configure automated slideshows for Bodhi Linux (Moksha Desktop)
+Keywords=wallpaper;background;slideshow;moksha;bodhi;leafpaper;desktop;
+Exec=bodhi-wallpaper --gui
+Icon=bodhi-wallpaper
+Terminal=false
+Type=Application
+Categories=Settings;DesktopSettings;GTK;Graphics;Utility;
+StartupNotify=true
+Actions=Next;Random;Preferences;
+
+[Desktop Action Next]
+Name=Next Wallpaper
+Exec=bodhi-wallpaper --next
+
+[Desktop Action Random]
+Name=Random Wallpaper
+Exec=bodhi-wallpaper --random
+
+[Desktop Action Preferences]
+Name=Preferences
+Exec=bodhi-wallpaper --preferences

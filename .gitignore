@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.sock
+*.deb
+.cache/
+build/
+dist/
+*~
+.DS_Store

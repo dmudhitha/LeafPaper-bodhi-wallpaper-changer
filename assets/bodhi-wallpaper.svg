@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2d3748"/>
+      <stop offset="100%" stop-color="#1a202c"/>
+    </linearGradient>
+
+    <!-- Display Screen Gradient -->
+    <linearGradient id="screenGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#38a169"/>
+      <stop offset="40%" stop-color="#68d391"/>
+      <stop offset="70%" stop-color="#f6e05e"/>
+      <stop offset="100%" stop-color="#dd6b20"/>
+    </linearGradient>
+
+    <!-- Bodhi Green Gradient -->
+    <linearGradient id="bodhiGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#9ae6b4"/>
+      <stop offset="50%" stop-color="#48bb78"/>
+      <stop offset="100%" stop-color="#276749"/>
+    </linearGradient>
+
+    <!-- Sun Gradient -->
+    <radialGradient id="sunGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fffaf0"/>
+      <stop offset="40%" stop-color="#fbd38d"/>
+      <stop offset="100%" stop-color="#ed8936"/>
+    </radialGradient>
+
+    <!-- Shadow Filter -->
+    <filter id="dropShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+
+    <filter id="iconShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- App Icon Base Squircle -->
+  <rect x="16" y="16" width="224" height="224" rx="48" fill="url(#bgGrad)" filter="url(#dropShadow)" stroke="#4a5568" stroke-width="2"/>
+
+  <!-- Monitor Screen Frame -->
+  <rect x="36" y="44" width="184" height="124" rx="12" fill="#171923" stroke="#4a5568" stroke-width="2" filter="url(#iconShadow)"/>
+
+  <!-- Screen Content: Scenic Wallpaper -->
+  <g clip-path="url(#screenClip)">
+    <clipPath id="screenClip">
+      <rect x="40" y="48" width="176" height="116" rx="8"/>
+    </clipPath>
+
+    <!-- Sky Background -->
+    <rect x="40" y="48" width="176" height="116" fill="url(#screenGrad)"/>
+
+    <!-- Sun -->
+    <circle cx="150" cy="80" r="22" fill="url(#sunGrad)" opacity="0.9"/>
+
+    <!-- Mountains / Landscape -->
+    <!-- Far Mountain -->
+    <polygon points="30,164 90,95 150,164" fill="#2d3748" opacity="0.6"/>
+    <!-- Middle Mountain -->
+    <polygon points="100,164 165,105 220,164" fill="#1a202c" opacity="0.75"/>
+    <!-- Near Hills -->
+    <path d="M 40,140 Q 90,120 140,145 T 220,135 L 220,164 L 40,164 Z" fill="#22543d"/>
+    <path d="M 40,150 Q 80,138 130,155 T 220,145 L 220,164 L 40,164 Z" fill="#2f855a"/>
+
+    <!-- Screen Gloss Highlight -->
+    <path d="M 40,48 L 160,48 L 40,130 Z" fill="#ffffff" opacity="0.08"/>
+  </g>
+
+  <!-- Monitor Stand Base & Neck -->
+  <!-- Neck -->
+  <rect x="118" y="168" width="20" height="22" rx="2" fill="#2d3748" stroke="#4a5568" stroke-width="1.5"/>
+  <!-- Base Stand -->
+  <path d="M 96,190 L 160,190 L 168,198 L 88,198 Z" fill="#4a5568" filter="url(#iconShadow)"/>
+  <ellipse cx="128" cy="194" rx="36" ry="5" fill="#718096"/>
+
+  <!-- Bodhi Leaf Floating Emblem (Bottom Right) -->
+  <g filter="url(#dropShadow)" transform="translate(136, 136)">
+    <!-- Outer Glow Circle -->
+    <circle cx="48" cy="48" r="44" fill="#1a202c" stroke="#68d391" stroke-width="3"/>
+    
+    <!-- Refresh / Cycle Arrows around Leaf -->
+    <!-- Arrow 1 Top Right -->
+    <path d="M 48,12 A 36,36 0 0,1 84,48" fill="none" stroke="#9ae6b4" stroke-width="4" stroke-linecap="round"/>
+    <polygon points="84,40 92,50 80,50" fill="#9ae6b4"/>
+
+    <!-- Arrow 2 Bottom Left -->
+    <path d="M 48,84 A 36,36 0 0,1 12,48" fill="none" stroke="#9ae6b4" stroke-width="4" stroke-linecap="round"/>
+    <polygon points="12,56 4,46 16,46" fill="#9ae6b4"/>
+
+    <!-- Bodhi Leaf Icon -->
+    <path d="M 48,22 C 30,34 26,52 34,64 C 40,74 48,78 48,78 C 48,78 56,74 62,64 C 70,52 66,34 48,22 Z" fill="url(#bodhiGreen)"/>
+    <!-- Leaf Vein -->
+    <path d="M 48,26 L 48,74 M 48,40 L 40,46 M 48,48 L 56,54 M 48,56 L 42,61 M 48,63 L 54,67" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+  </g>
+</svg>
