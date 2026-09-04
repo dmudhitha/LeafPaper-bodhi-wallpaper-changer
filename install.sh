@@ -92,9 +92,9 @@ if [ -d "$HOME/Desktop" ] && [ "$INSTALL_MODE" = "user" ]; then
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Bodhi Wallpaper Changer
+Name=LeafPaper - Bodhi Wallpaper Changer
 GenericName=Wallpaper Manager
-Comment=Change desktop wallpapers, download online wallpapers, and configure automated slideshows
+Comment=Change desktop wallpapers, download online wallpapers, and configure automated slideshows for Moksha Desktop
 Exec=$BIN_DIR/bodhi-wallpaper --gui
 Icon=$SHARE_DIR/assets/bodhi-wallpaper.png
 Path=$SCRIPT_DIR

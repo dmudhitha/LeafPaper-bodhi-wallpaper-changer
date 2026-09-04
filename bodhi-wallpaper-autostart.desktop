@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=Bodhi Wallpaper Daemon
-Comment=Background wallpaper rotation and tray service for Moksha Desktop
-Exec=/usr/bin/bodhi-wallpaper --daemon --tray
+Name=LeafPaper Daemon
+Comment=Background wallpaper rotation service for Moksha Desktop
+Exec=bodhi-wallpaper --daemon
 Icon=bodhi-wallpaper
 Terminal=false
 Categories=Utility;Settings;

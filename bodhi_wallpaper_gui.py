@@ -38,7 +38,12 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 from bodhi_wallpaper_engine import (
     BodhiWallpaperEngine,
     CONFIG_DIR,
-    send_ipc_command
+    send_ipc_command,
+    is_daemon_running,
+    start_daemon,
+    stop_daemon,
+    restart_daemon,
+    get_launcher_path
 )
 from bodhi_wallpaper_online import (
     OnlineWallpaperManager,
@@ -333,8 +338,16 @@ class BodhiWallpaperWindow(Gtk.Window):
         # Load initial local wallpapers
         self.reload_wallpapers()
 
+        # Ensure background daemon is running if slideshow is configured
+        if self.engine.config.get("auto_change", False):
+            self.thread_pool.submit(self._ensure_daemon_if_needed)
+
         if start_in_prefs:
             GLib.idle_add(self._on_settings_clicked)
+
+    def _ensure_daemon_if_needed(self):
+        if self.engine.config.get("auto_change", False) and not is_daemon_running():
+            start_daemon()
 
     def _apply_css(self):
         provider = Gtk.CssProvider()
@@ -1654,32 +1667,97 @@ class PreferencesDialog(Gtk.Dialog):
         box.pack_start(self.chk_autostart, False, False, 0)
 
         box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 2)
+
+        # Service Status Row (Status label + Action button)
+        status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.lbl_daemon_status = Gtk.Label(label="Checking daemon status...")
         self.lbl_daemon_status.set_halign(Gtk.Align.START)
         self.lbl_daemon_status.get_style_context().add_class("stat-label")
-        box.pack_start(self.lbl_daemon_status, False, False, 2)
+        status_box.pack_start(self.lbl_daemon_status, True, True, 0)
+
+        self.btn_daemon_action = Gtk.Button(label="Start Service")
+        self.btn_daemon_action.connect("clicked", self._on_daemon_action_clicked)
+        status_box.pack_end(self.btn_daemon_action, False, False, 0)
+        box.pack_start(status_box, False, False, 2)
 
         self._check_daemon_status()
         self.show_all()
 
+        # Update status & countdown every second while dialog is open
+        self._status_timer_id = GLib.timeout_add(1000, self._check_daemon_status)
+        self.connect("destroy", self._on_dialog_destroy)
+
+    def _on_dialog_destroy(self, dialog):
+        if getattr(self, "_status_timer_id", None):
+            GLib.source_remove(self._status_timer_id)
+            self._status_timer_id = None
+
     def _check_daemon_status(self):
         resp = send_ipc_command("STATUS")
         if resp:
-            self.lbl_daemon_status.set_markup("<b>Service Status:</b> <span color='#779933'>● Active (Daemon Running)</span>")
+            try:
+                info = json.loads(resp)
+                if info.get("paused"):
+                    state_str = "<span color='#e6a100'>⏸ Paused</span>"
+                elif info.get("auto_change"):
+                    rem = info.get("seconds_until_next")
+                    if rem is not None:
+                        mins, secs = divmod(rem, 60)
+                        state_str = f"<span color='#779933'>● Active (Next in {mins}m {secs:02d}s)</span>"
+                    else:
+                        state_str = "<span color='#779933'>● Active (Daemon Running)</span>"
+                else:
+                    state_str = "<span color='#888888'>○ Idle (Slideshow Off)</span>"
+                self.lbl_daemon_status.set_markup(f"<b>Service:</b> {state_str}")
+                self.btn_daemon_action.set_label("Restart")
+                self.btn_daemon_action.set_tooltip_text("Restart background rotation daemon")
+            except Exception:
+                self.lbl_daemon_status.set_markup("<b>Service:</b> <span color='#779933'>● Active (Daemon Running)</span>")
+                self.btn_daemon_action.set_label("Restart")
         else:
-            self.lbl_daemon_status.set_markup("<b>Service Status:</b> <span color='#888888'>○ Inactive (Daemon Not Running)</span>")
+            self.lbl_daemon_status.set_markup("<b>Service:</b> <span color='#d9534f'>○ Inactive (Daemon Not Running)</span>")
+            self.btn_daemon_action.set_label("Start Service")
+            self.btn_daemon_action.set_tooltip_text("Start background rotation daemon now")
+        return True
+
+    def _on_daemon_action_clicked(self, btn):
+        btn.set_sensitive(False)
+        def task():
+            if is_daemon_running():
+                restart_daemon()
+            else:
+                start_daemon()
+            GLib.idle_add(self._on_daemon_action_finished)
+        self.parent_window.thread_pool.submit(task)
+
+    def _on_daemon_action_finished(self):
+        self.btn_daemon_action.set_sensitive(True)
+        self._check_daemon_status()
 
     def _on_auto_toggled(self, switch, state):
         self.engine.config["auto_change"] = state
         self.engine.save_config()
-        send_ipc_command("RELOAD")
+
+        if state:
+            if not is_daemon_running():
+                self.parent_window.thread_pool.submit(start_daemon)
+            else:
+                send_ipc_command("RELOAD")
+        else:
+            send_ipc_command("RELOAD")
+
+        GLib.timeout_add(300, self._check_daemon_status)
 
     def _on_interval_changed(self, combo):
         try:
             mins = int(combo.get_active_id())
             self.engine.config["interval_minutes"] = mins
             self.engine.save_config()
-            send_ipc_command("RELOAD")
+            if self.engine.config.get("auto_change", False) and not is_daemon_running():
+                self.parent_window.thread_pool.submit(start_daemon)
+            else:
+                send_ipc_command("RELOAD")
+            GLib.timeout_add(200, self._check_daemon_status)
         except Exception:
             pass
 
@@ -1687,6 +1765,7 @@ class PreferencesDialog(Gtk.Dialog):
         self.engine.config["random_order"] = (combo.get_active_id() == "random")
         self.engine.save_config()
         send_ipc_command("RELOAD")
+        GLib.timeout_add(200, self._check_daemon_status)
 
     def _on_notify_toggled(self, chk):
         self.engine.config["notify"] = chk.get_active()
@@ -1713,24 +1792,29 @@ class PreferencesDialog(Gtk.Dialog):
 
         os.makedirs(AUTOSTART_DIR, exist_ok=True)
         if enabled:
+            launcher = get_launcher_path()
             autostart_content = f"""[Desktop Entry]
 Type=Application
-Name=Bodhi Wallpaper Daemon
+Name=LeafPaper Daemon
 Comment=Background wallpaper rotation for Moksha Desktop
-Exec=/usr/bin/bodhi-wallpaper --daemon
+Exec={launcher} --daemon
 Icon=bodhi-wallpaper
 Terminal=false
 Categories=Utility;Settings;
 X-Moksha-Autostart=true
+StartupNotify=false
 """
             with open(AUTOSTART_FILE, "w", encoding="utf-8") as f:
                 f.write(autostart_content)
+            if self.engine.config.get("auto_change", False) and not is_daemon_running():
+                self.parent_window.thread_pool.submit(start_daemon)
         else:
             if os.path.exists(AUTOSTART_FILE):
                 try:
                     os.remove(AUTOSTART_FILE)
                 except Exception:
                     pass
+        GLib.timeout_add(200, self._check_daemon_status)
 
 
 def main():

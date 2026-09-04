@@ -17,6 +17,7 @@ import socket
 import subprocess
 import struct
 import zlib
+import shutil
 from pathlib import Path
 from PIL import Image
 
@@ -609,6 +610,82 @@ def send_ipc_command(command, timeout=2.0):
             return response
     except Exception:
         return None
+
+
+def is_daemon_running():
+    """Checks whether the background wallpaper daemon is responsive."""
+    return send_ipc_command("PING") == "PONG"
+
+
+def get_launcher_path():
+    """Detects the installed or local executable path for bodhi-wallpaper."""
+    user_bin = os.path.expanduser("~/.local/bin/bodhi-wallpaper")
+    if os.path.exists(user_bin) and os.access(user_bin, os.X_OK):
+        return user_bin
+
+    which_bin = shutil.which("bodhi-wallpaper")
+    if which_bin and os.access(which_bin, os.X_OK):
+        return which_bin
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    local_launcher = os.path.join(script_dir, "bodhi-wallpaper")
+    if os.path.exists(local_launcher) and os.access(local_launcher, os.X_OK):
+        return local_launcher
+
+    return "bodhi-wallpaper"
+
+
+def start_daemon():
+    """Starts the background rotation daemon detached from parent."""
+    if is_daemon_running():
+        return True
+
+    launcher = get_launcher_path()
+    cmd = [launcher, "--daemon"]
+
+    # Fallback to direct python script if launcher binary is not directly executable
+    if not os.path.exists(launcher) or not os.access(launcher, os.X_OK):
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        daemon_script = os.path.join(script_dir, "bodhi_wallpaper_daemon.py")
+        if os.path.exists(daemon_script):
+            cmd = [sys.executable, daemon_script]
+
+    try:
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True
+        )
+        for _ in range(30):
+            time.sleep(0.1)
+            if is_daemon_running():
+                return True
+        return is_daemon_running()
+    except Exception as e:
+        print(f"[Engine] Failed to start daemon: {e}", file=sys.stderr)
+        return False
+
+
+def stop_daemon():
+    """Stops the background rotation daemon."""
+    if not is_daemon_running():
+        return True
+
+    send_ipc_command("STOP")
+    for _ in range(25):
+        time.sleep(0.1)
+        if not is_daemon_running():
+            return True
+    return False
+
+
+def restart_daemon():
+    """Restarts the background rotation daemon."""
+    stop_daemon()
+    time.sleep(0.2)
+    return start_daemon()
 
 
 if __name__ == "__main__":

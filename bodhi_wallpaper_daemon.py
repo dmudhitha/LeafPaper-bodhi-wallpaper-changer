@@ -121,18 +121,25 @@ class BodhiWallpaperDaemon:
 
     def _slideshow_loop(self):
         """Thread that handles automated timed wallpaper changes."""
+        last_config_check = 0
         while self.running:
             try:
                 time.sleep(1)
                 if not self.running:
                     break
 
+                now = time.time()
+                # Periodically sync config from disk every 5 seconds
+                if now - last_config_check >= 5:
+                    self.engine.config = self.engine.load_config()
+                    last_config_check = now
+
                 config = self.engine.config
                 auto_change = config.get("auto_change", False)
                 interval_seconds = max(10, int(config.get("interval_minutes", 15)) * 60)
 
                 if auto_change and not self.paused:
-                    elapsed = time.time() - self.last_change_time
+                    elapsed = now - self.last_change_time
                     if elapsed >= interval_seconds:
                         self._trigger_change(random_pick=config.get("random_order", True))
             except Exception as e:
@@ -141,6 +148,7 @@ class BodhiWallpaperDaemon:
 
     def _trigger_change(self, random_pick=True):
         """Picks and applies next or random wallpaper."""
+        self.last_change_time = time.time()
         try:
             if random_pick:
                 target = self.engine.get_random_wallpaper()
@@ -151,7 +159,6 @@ class BodhiWallpaperDaemon:
                 style = self.engine.config.get("style", "zoom")
                 notify = self.engine.config.get("notify", True)
                 self.engine.apply_wallpaper(target, style=style, notify=notify)
-                self.last_change_time = time.time()
                 print(f"[Daemon] Applied wallpaper: {os.path.basename(target)}")
         except Exception as e:
             print(f"[Daemon] Failed to change wallpaper: {e}", file=sys.stderr)
