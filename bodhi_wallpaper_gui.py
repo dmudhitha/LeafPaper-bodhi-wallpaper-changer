@@ -1148,7 +1148,7 @@ class BodhiWallpaperWindow(Gtk.Window):
 
         def task():
             items = []
-            fallback_used = None
+            error_msg = None
             try:
                 if prov == "bing":
                     items = self.online_mgr.fetch_bing_daily(count=8)
@@ -1162,6 +1162,8 @@ class BodhiWallpaperWindow(Gtk.Window):
                         items = self.online_mgr.search_wikimedia(query=q, count=24)
                     else:
                         items = self.online_mgr.fetch_wikimedia_featured(count=24)
+                    if not items:
+                        error_msg = "No wallpapers found on Wikimedia Commons for this search."
                 elif prov == "openverse":
                     q = query if (cat_key == "custom" and query) else CATEGORY_PRESETS.get(cat_key, {}).get("query", query or "landscape")
                     try:
@@ -1169,9 +1171,7 @@ class BodhiWallpaperWindow(Gtk.Window):
                     except Exception as e:
                         print(f"[GUI] Openverse fetch error: {e}", file=sys.stderr)
                     if not items:
-                        # Fallback to Wikimedia Commons if Openverse has rate-limits
-                        items = self.online_mgr.search_wikimedia(query=q, count=24)
-                        fallback_used = "wikimedia"
+                        error_msg = "Openverse is temporarily rate-limited by Cloudflare (Error 429)."
                 else:  # wallhaven
                     try:
                         if cat_key == "custom":
@@ -1186,52 +1186,75 @@ class BodhiWallpaperWindow(Gtk.Window):
                         print(f"[GUI] Wallhaven error: {e}", file=sys.stderr)
 
                     if not items:
-                        # Wallhaven server is down (HTTP 521) - provide seamless fallback to Openverse, then Wikimedia
-                        q = query if (cat_key == "custom" and query) else CATEGORY_PRESETS.get(cat_key, {}).get("query", query or "nature")
-                        try:
-                            items = self.online_mgr.fetch_openverse(query=q, page=page, count=24)
-                        except Exception:
-                            items = []
-                        if items:
-                            fallback_used = "openverse"
-                        else:
-                            items = self.online_mgr.search_wikimedia(query=q, count=24)
-                            fallback_used = "wikimedia"
+                        error_msg = "Wallhaven origin server is currently offline (Cloudflare Error 521)."
             except Exception as e:
                 print(f"[GUI] Online search error: {e}", file=sys.stderr)
+                error_msg = f"Network or search error: {e}"
 
-            GLib.idle_add(self._on_online_fetched, items, prov, curr_token, fallback_used)
+            GLib.idle_add(self._on_online_fetched, items, prov, curr_token, error_msg)
 
         self.thread_pool.submit(task)
 
-    def _on_online_fetched(self, items, provider, token, fallback_used=None):
+    def _on_online_fetched(self, items, provider, token, error_msg=None):
         if token != self._load_token:
             return
         self.is_fetching_online = False
         self.online_wallpapers = items
-        if fallback_used == "openverse":
-            self.lbl_count.set_markup(
-                f"<span color='#e6a100'>⚠ Wallhaven offline (Error 521).</span> Showing {len(items)} Openverse wallpapers"
-            )
-        elif fallback_used == "wikimedia":
-            self.lbl_count.set_markup(
-                f"<span color='#e6a100'>⚠ Provider offline/limited.</span> Showing {len(items)} Wikimedia Commons wallpapers"
-            )
-        else:
-            self.lbl_count.set_text(f"Found {len(items)} online wallpapers ({provider.title()})")
 
-        for item in items:
-            card = OnlineWallpaperCard(item, self.online_mgr)
-            self.card_widgets[item["id"]] = card
-            self.flowbox.add(card)
-            self.thread_pool.submit(self._async_load_online_thumbnail, item, card, token)
-
-        self.flowbox.show_all()
+        for child in self.flowbox.get_children():
+            self.flowbox.remove(child)
+        self.card_widgets.clear()
 
         if items:
+            self.lbl_count.set_text(f"Found {len(items)} online wallpapers ({provider.title()})")
+            for item in items:
+                card = OnlineWallpaperCard(item, self.online_mgr)
+                self.card_widgets[item["id"]] = card
+                self.flowbox.add(card)
+                self.thread_pool.submit(self._async_load_online_thumbnail, item, card, token)
+
+            self.flowbox.show_all()
             first_card = self.card_widgets[items[0]["id"]]
             self.flowbox.select_child(first_card)
             self._update_online_preview(items[0])
+        else:
+            msg = error_msg or f"No wallpapers found on {provider.title()}."
+            self.lbl_count.set_markup(f"<span color='#e05252'>⚠ {msg}</span>")
+
+            empty_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+            empty_box.set_halign(Gtk.Align.CENTER)
+            empty_box.set_valign(Gtk.Align.CENTER)
+            empty_box.set_margin_top(60)
+            empty_box.set_margin_bottom(60)
+
+            icon = Gtk.Image.new_from_icon_name("network-error", Gtk.IconSize.DIALOG)
+            icon.set_pixel_size(56)
+            empty_box.pack_start(icon, False, False, 0)
+
+            title_lbl = Gtk.Label()
+            title_lbl.set_markup(f"<b><big>{provider.title()} Unavailable</big></b>")
+            empty_box.pack_start(title_lbl, False, False, 0)
+
+            desc_lbl = Gtk.Label(label=msg)
+            desc_lbl.set_line_wrap(True)
+            desc_lbl.set_max_width_chars(55)
+            empty_box.pack_start(desc_lbl, False, False, 0)
+
+            btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            btn_box.set_halign(Gtk.Align.CENTER)
+
+            btn_wiki = Gtk.Button(label="🏛 Browse Wikimedia Commons (8K)")
+            btn_wiki.connect("clicked", lambda b: self.combo_provider.set_active_id("wikimedia"))
+            btn_box.pack_start(btn_wiki, False, False, 0)
+
+            btn_picsum = Gtk.Button(label="📷 Browse Picsum Photos (5K)")
+            btn_picsum.connect("clicked", lambda b: self.combo_provider.set_active_id("picsum"))
+            btn_box.pack_start(btn_picsum, False, False, 0)
+
+            empty_box.pack_start(btn_box, False, False, 10)
+
+            self.flowbox.add(empty_box)
+            self.flowbox.show_all()
 
     def _async_load_online_thumbnail(self, item, card, token):
         if token != self._load_token:

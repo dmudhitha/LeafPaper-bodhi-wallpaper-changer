@@ -82,7 +82,8 @@ def main():
     parser.add_argument("--remove-folder", metavar="PATH", help="Remove a directory from wallpaper sources")
     parser.add_argument("--bing-daily", action="store_true", help="Download and apply today's Bing Daily wallpaper")
     parser.add_argument("--picsum", action="store_true", help="Download and apply a curated 5K photography wallpaper from Picsum")
-    parser.add_argument("--wikimedia", action="store_true", help="Download and apply an award-winning featured picture from Wikimedia Commons")
+    parser.add_argument("--wikimedia", nargs="?", const="featured", metavar="QUERY",
+                        help="Download and apply wallpaper from Wikimedia Commons (featured or search query)")
     parser.add_argument("--openverse", metavar="QUERY", help="Search and apply a wallpaper from Openverse Creative Commons library")
     parser.add_argument("--online-category", metavar="CATEGORY",
                         help="Download & apply wallpaper from category (e.g. nature, space, cyberpunk, anime, cars, minimalism)")
@@ -251,14 +252,20 @@ def main():
         from bodhi_wallpaper_online import OnlineWallpaperManager
         import random
         mgr = OnlineWallpaperManager()
-        items = mgr.fetch_wikimedia_featured(count=15)
+        if args.wikimedia == "featured":
+            print("Fetching featured picture from Wikimedia Commons...")
+            items = mgr.fetch_wikimedia_featured(count=15)
+        else:
+            print(f"Searching Wikimedia Commons for '{args.wikimedia}'...")
+            items = mgr.search_wikimedia(query=args.wikimedia, count=10)
+
         if items:
-            pick = random.choice(items)
+            pick = random.choice(items) if args.wikimedia == "featured" else items[0]
             print(f"Downloading {pick['title']} ({pick['resolution']})...")
             path = mgr.download_and_apply(pick, engine, style=args.style or "zoom")
             print(f"Applied Wikimedia wallpaper: {pick['title']} ({path})")
         else:
-            print("Failed to fetch picture from Wikimedia.", file=sys.stderr)
+            print("No wallpapers found on Wikimedia Commons.", file=sys.stderr)
             sys.exit(1)
         return
 
@@ -267,16 +274,14 @@ def main():
         mgr = OnlineWallpaperManager()
         print(f"Searching Openverse for '{args.openverse}'...")
         items = mgr.fetch_openverse(query=args.openverse, count=10)
-        if not items:
-            print("[Notice] Openverse returned no results. Falling back to Wikimedia Commons...", file=sys.stderr)
-            items = mgr.search_wikimedia(query=args.openverse, count=10)
         if items:
             pick = items[0]
             print(f"Downloading {pick['title']} ({pick['resolution']})...")
             path = mgr.download_and_apply(pick, engine, style=args.style or "zoom")
-            print(f"Applied wallpaper: {pick['title']} ({path})")
+            print(f"Applied Openverse wallpaper: {pick['title']} ({path})")
         else:
-            print("No wallpapers found on Openverse or Wikimedia for query.", file=sys.stderr)
+            print("[Error] Openverse is currently rate-limited (Cloudflare Error 429).", file=sys.stderr)
+            print("Tip: Search Wikimedia Commons instead with: bodhi-wallpaper --wikimedia \"" + args.openverse + "\"", file=sys.stderr)
             sys.exit(1)
         return
 
@@ -285,23 +290,11 @@ def main():
         mgr = OnlineWallpaperManager()
         if args.online_category:
             cat = args.online_category.lower()
-            print(f"Searching online for category '{cat}'...")
+            print(f"Searching Wallhaven for category '{cat}'...")
             items = mgr.search_wallhaven(category_key=cat, sorting="random")
-            if not items:
-                print("[Notice] Wallhaven is unreachable (server offline). Falling back to Openverse...", file=sys.stderr)
-                items = mgr.fetch_openverse(query=cat, count=10)
-            if not items:
-                print("[Notice] Openverse unreachable or empty. Falling back to Wikimedia Commons...", file=sys.stderr)
-                items = mgr.search_wikimedia(query=cat, count=10)
         else:
-            print(f"Searching online for '{args.online_search}'...")
+            print(f"Searching Wallhaven for '{args.online_search}'...")
             items = mgr.search_wallhaven(query=args.online_search, sorting="toplist")
-            if not items:
-                print("[Notice] Wallhaven is unreachable (server offline). Falling back to Openverse...", file=sys.stderr)
-                items = mgr.fetch_openverse(query=args.online_search, count=10)
-            if not items:
-                print("[Notice] Openverse unreachable or empty. Falling back to Wikimedia Commons...", file=sys.stderr)
-                items = mgr.search_wikimedia(query=args.online_search, count=10)
 
         if items:
             pick = items[0]
@@ -309,7 +302,10 @@ def main():
             path = mgr.download_and_apply(pick, engine, style=args.style or "zoom")
             print(f"Applied online wallpaper: {pick['title']} ({path})")
         else:
-            print("No online wallpapers found for the given search/category.", file=sys.stderr)
+            target = args.online_category or args.online_search
+            print("[Notice] Wallhaven origin server is currently offline (Cloudflare Error 521).", file=sys.stderr)
+            print("Tip: Search Wikimedia Commons instead with: bodhi-wallpaper --wikimedia \"" + target + "\"", file=sys.stderr)
+            print("Or download daily wallpapers with: bodhi-wallpaper --bing / --nasa / --picsum", file=sys.stderr)
             sys.exit(1)
         return
 
