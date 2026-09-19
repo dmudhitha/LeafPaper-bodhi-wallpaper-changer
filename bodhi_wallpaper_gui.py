@@ -743,7 +743,7 @@ class BodhiWallpaperWindow(Gtk.Window):
         self.combo_provider.append("bing", "Bing Daily (UHD)")
         self.combo_provider.append("nasa", "NASA Space (APOD)")
         self.combo_provider.append("picsum", "Picsum Photos (5K)")
-        self.combo_provider.append("wikimedia", "Wikimedia Featured (8K)")
+        self.combo_provider.append("wikimedia", "Wikimedia Commons (8K & Search)")
         self.combo_provider.append("openverse", "Openverse (700M+ CC)")
         self.combo_provider.set_active_id("wallhaven")
         self.combo_provider.connect("changed", self._on_online_provider_changed)
@@ -1089,8 +1089,8 @@ class BodhiWallpaperWindow(Gtk.Window):
     def _on_online_provider_changed(self, combo):
         prov = combo.get_active_id() or "wallhaven"
         is_wallhaven = (prov == "wallhaven")
-        is_searchable = prov in ["wallhaven", "openverse"]
-        has_categories = prov in ["wallhaven", "openverse"]
+        is_searchable = prov in ["wallhaven", "openverse", "wikimedia"]
+        has_categories = prov in ["wallhaven", "openverse", "wikimedia"]
         has_pagination = prov not in ["bing", "nasa"]
 
         self.combo_online_cat.set_visible(has_categories)
@@ -1148,7 +1148,7 @@ class BodhiWallpaperWindow(Gtk.Window):
 
         def task():
             items = []
-            fallback_used = False
+            fallback_used = None
             try:
                 if prov == "bing":
                     items = self.online_mgr.fetch_bing_daily(count=8)
@@ -1157,10 +1157,21 @@ class BodhiWallpaperWindow(Gtk.Window):
                 elif prov == "picsum":
                     items = self.online_mgr.fetch_picsum(page=page, count=24)
                 elif prov == "wikimedia":
-                    items = self.online_mgr.fetch_wikimedia_featured(count=24)
+                    q = query if (cat_key == "custom" and query) else CATEGORY_PRESETS.get(cat_key, {}).get("query", query)
+                    if q:
+                        items = self.online_mgr.search_wikimedia(query=q, count=24)
+                    else:
+                        items = self.online_mgr.fetch_wikimedia_featured(count=24)
                 elif prov == "openverse":
                     q = query if (cat_key == "custom" and query) else CATEGORY_PRESETS.get(cat_key, {}).get("query", query or "landscape")
-                    items = self.online_mgr.fetch_openverse(query=q, page=page, count=24)
+                    try:
+                        items = self.online_mgr.fetch_openverse(query=q, page=page, count=24)
+                    except Exception as e:
+                        print(f"[GUI] Openverse fetch error: {e}", file=sys.stderr)
+                    if not items:
+                        # Fallback to Wikimedia Commons if Openverse has rate-limits
+                        items = self.online_mgr.search_wikimedia(query=q, count=24)
+                        fallback_used = "wikimedia"
                 else:  # wallhaven
                     try:
                         if cat_key == "custom":
@@ -1175,10 +1186,17 @@ class BodhiWallpaperWindow(Gtk.Window):
                         print(f"[GUI] Wallhaven error: {e}", file=sys.stderr)
 
                     if not items:
-                        # Wallhaven server is down (HTTP 521) - provide seamless fallback to Openverse
+                        # Wallhaven server is down (HTTP 521) - provide seamless fallback to Openverse, then Wikimedia
                         q = query if (cat_key == "custom" and query) else CATEGORY_PRESETS.get(cat_key, {}).get("query", query or "nature")
-                        items = self.online_mgr.fetch_openverse(query=q, page=page, count=24)
-                        fallback_used = True
+                        try:
+                            items = self.online_mgr.fetch_openverse(query=q, page=page, count=24)
+                        except Exception:
+                            items = []
+                        if items:
+                            fallback_used = "openverse"
+                        else:
+                            items = self.online_mgr.search_wikimedia(query=q, count=24)
+                            fallback_used = "wikimedia"
             except Exception as e:
                 print(f"[GUI] Online search error: {e}", file=sys.stderr)
 
@@ -1186,14 +1204,18 @@ class BodhiWallpaperWindow(Gtk.Window):
 
         self.thread_pool.submit(task)
 
-    def _on_online_fetched(self, items, provider, token, fallback_used=False):
+    def _on_online_fetched(self, items, provider, token, fallback_used=None):
         if token != self._load_token:
             return
         self.is_fetching_online = False
         self.online_wallpapers = items
-        if fallback_used:
+        if fallback_used == "openverse":
             self.lbl_count.set_markup(
                 f"<span color='#e6a100'>⚠ Wallhaven offline (Error 521).</span> Showing {len(items)} Openverse wallpapers"
+            )
+        elif fallback_used == "wikimedia":
+            self.lbl_count.set_markup(
+                f"<span color='#e6a100'>⚠ Provider offline/limited.</span> Showing {len(items)} Wikimedia Commons wallpapers"
             )
         else:
             self.lbl_count.set_text(f"Found {len(items)} online wallpapers ({provider.title()})")
@@ -1444,8 +1466,8 @@ class BodhiWallpaperWindow(Gtk.Window):
                         self.online_bar.show_all()
                         prov = self.combo_provider.get_active_id() or "wallhaven"
                         is_wallhaven = (prov == "wallhaven")
-                        is_searchable = prov in ["wallhaven", "openverse"]
-                        has_categories = prov in ["wallhaven", "openverse"]
+                        is_searchable = prov in ["wallhaven", "openverse", "wikimedia"]
+                        has_categories = prov in ["wallhaven", "openverse", "wikimedia"]
                         has_pagination = prov not in ["bing", "nasa"]
 
                         self.combo_online_cat.set_visible(has_categories)

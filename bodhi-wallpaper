@@ -267,13 +267,16 @@ def main():
         mgr = OnlineWallpaperManager()
         print(f"Searching Openverse for '{args.openverse}'...")
         items = mgr.fetch_openverse(query=args.openverse, count=10)
+        if not items:
+            print("[Notice] Openverse returned no results. Falling back to Wikimedia Commons...", file=sys.stderr)
+            items = mgr.search_wikimedia(query=args.openverse, count=10)
         if items:
             pick = items[0]
             print(f"Downloading {pick['title']} ({pick['resolution']})...")
             path = mgr.download_and_apply(pick, engine, style=args.style or "zoom")
-            print(f"Applied Openverse wallpaper: {pick['title']} ({path})")
+            print(f"Applied wallpaper: {pick['title']} ({path})")
         else:
-            print("No wallpapers found on Openverse for query.", file=sys.stderr)
+            print("No wallpapers found on Openverse or Wikimedia for query.", file=sys.stderr)
             sys.exit(1)
         return
 
@@ -287,12 +290,18 @@ def main():
             if not items:
                 print("[Notice] Wallhaven is unreachable (server offline). Falling back to Openverse...", file=sys.stderr)
                 items = mgr.fetch_openverse(query=cat, count=10)
+            if not items:
+                print("[Notice] Openverse unreachable or empty. Falling back to Wikimedia Commons...", file=sys.stderr)
+                items = mgr.search_wikimedia(query=cat, count=10)
         else:
             print(f"Searching online for '{args.online_search}'...")
             items = mgr.search_wallhaven(query=args.online_search, sorting="toplist")
             if not items:
                 print("[Notice] Wallhaven is unreachable (server offline). Falling back to Openverse...", file=sys.stderr)
                 items = mgr.fetch_openverse(query=args.online_search, count=10)
+            if not items:
+                print("[Notice] Openverse unreachable or empty. Falling back to Wikimedia Commons...", file=sys.stderr)
+                items = mgr.search_wikimedia(query=args.online_search, count=10)
 
         if items:
             pick = items[0]

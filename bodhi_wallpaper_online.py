@@ -19,7 +19,7 @@ CACHE_DIR = os.path.expanduser("~/.cache/bodhi-wallpaper")
 ONLINE_THUMBS_DIR = os.path.join(CACHE_DIR, "online_thumbs")
 DOWNLOADS_DIR = os.path.expanduser("~/Pictures/Wallpapers/Online")
 
-USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) BodhiWallpaperChanger/1.0"
+USER_AGENT = "LeafPaper/1.0 (https://github.com/dmudhitha/LeafPaper-bodhi-wallpaper-changer; contact@bodhi.org)"
 
 # Category Presets for Wallhaven
 CATEGORY_PRESETS = {
@@ -266,6 +266,65 @@ class OnlineWallpaperManager:
                 })
         except Exception as e:
             print(f"[Online] Error fetching from Wikimedia: {e}", file=sys.stderr)
+
+        return items
+
+    def search_wikimedia(self, query="landscape", count=24):
+        """
+        Searches Wikimedia Commons for high-resolution images matching query or category.
+        """
+        q = (query or "landscape").strip()
+        params = {
+            "action": "query",
+            "generator": "search",
+            "gsrsearch": f"{q} filetype:bitmap",
+            "gsrnamespace": "6",
+            "gsrlimit": str(min(count, 30)),
+            "prop": "imageinfo",
+            "iiprop": "url|size",
+            "iiurlwidth": "400",
+            "format": "json"
+        }
+        url = f"https://commons.wikimedia.org/w/api.php?{urllib.parse.urlencode(params)}"
+        items = []
+        try:
+            req = self._get_request(url)
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+
+            pages = data.get("query", {}).get("pages", {})
+            for pid, page in pages.items():
+                title = page.get("title", "Wikimedia").replace("File:", "").replace("_", " ")
+                clean_title = title.split(".")[0][:35]
+                ii = page.get("imageinfo", [{}])[0]
+                full_url = ii.get("url", "")
+                thumb_url = ii.get("thumburl") or full_url
+
+                clean_url = full_url.split("?")[0].lower()
+                if not clean_url.endswith((".jpg", ".jpeg", ".png", ".webp")):
+                    continue
+
+                w = ii.get("width", "HD")
+                h = ii.get("height", "")
+                ext = clean_url.split(".")[-1].upper()
+                page_title = page.get("title", "")
+                quoted_title = urllib.parse.quote(page_title)
+
+                items.append({
+                    "id": f"wiki_{pid}",
+                    "title": clean_title,
+                    "provider": "Wikimedia",
+                    "category": q.capitalize(),
+                    "resolution": f"{w} × {h}" if h else str(w),
+                    "file_size": "High-Res",
+                    "format": ext,
+                    "thumb_url": thumb_url,
+                    "full_url": full_url,
+                    "source_url": f"https://commons.wikimedia.org/wiki/{quoted_title}",
+                    "filename": f"wikimedia_{pid}.{ext.lower()}"
+                })
+        except Exception as e:
+            print(f"[Online] Error searching Wikimedia: {e}", file=sys.stderr)
 
         return items
 
