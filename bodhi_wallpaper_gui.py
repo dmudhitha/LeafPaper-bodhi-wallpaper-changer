@@ -1090,9 +1090,10 @@ class BodhiWallpaperWindow(Gtk.Window):
         prov = combo.get_active_id() or "wallhaven"
         is_wallhaven = (prov == "wallhaven")
         is_searchable = prov in ["wallhaven", "openverse"]
+        has_categories = prov in ["wallhaven", "openverse"]
         has_pagination = prov not in ["bing", "nasa"]
 
-        self.combo_online_cat.set_visible(is_wallhaven)
+        self.combo_online_cat.set_visible(has_categories)
         self.combo_online_res.set_visible(is_wallhaven)
         self.combo_online_sort.set_visible(is_wallhaven)
         self.entry_online_query.set_visible(is_searchable)
@@ -1147,6 +1148,7 @@ class BodhiWallpaperWindow(Gtk.Window):
 
         def task():
             items = []
+            fallback_used = False
             try:
                 if prov == "bing":
                     items = self.online_mgr.fetch_bing_daily(count=8)
@@ -1157,29 +1159,44 @@ class BodhiWallpaperWindow(Gtk.Window):
                 elif prov == "wikimedia":
                     items = self.online_mgr.fetch_wikimedia_featured(count=24)
                 elif prov == "openverse":
-                    items = self.online_mgr.fetch_openverse(query=query or "landscape", page=page, count=24)
-                else:
-                    if cat_key == "custom":
-                        items = self.online_mgr.search_wallhaven(
-                            query=query or "nature", resolution=res, sorting=sort, page=page
-                        )
-                    else:
-                        items = self.online_mgr.search_wallhaven(
-                            category_key=cat_key, resolution=res, sorting=sort, page=page
-                        )
+                    q = query if (cat_key == "custom" and query) else CATEGORY_PRESETS.get(cat_key, {}).get("query", query or "landscape")
+                    items = self.online_mgr.fetch_openverse(query=q, page=page, count=24)
+                else:  # wallhaven
+                    try:
+                        if cat_key == "custom":
+                            items = self.online_mgr.search_wallhaven(
+                                query=query or "nature", resolution=res, sorting=sort, page=page
+                            )
+                        else:
+                            items = self.online_mgr.search_wallhaven(
+                                category_key=cat_key, resolution=res, sorting=sort, page=page
+                            )
+                    except Exception as e:
+                        print(f"[GUI] Wallhaven error: {e}", file=sys.stderr)
+
+                    if not items:
+                        # Wallhaven server is down (HTTP 521) - provide seamless fallback to Openverse
+                        q = query if (cat_key == "custom" and query) else CATEGORY_PRESETS.get(cat_key, {}).get("query", query or "nature")
+                        items = self.online_mgr.fetch_openverse(query=q, page=page, count=24)
+                        fallback_used = True
             except Exception as e:
                 print(f"[GUI] Online search error: {e}", file=sys.stderr)
 
-            GLib.idle_add(self._on_online_fetched, items, prov, curr_token)
+            GLib.idle_add(self._on_online_fetched, items, prov, curr_token, fallback_used)
 
         self.thread_pool.submit(task)
 
-    def _on_online_fetched(self, items, provider, token):
+    def _on_online_fetched(self, items, provider, token, fallback_used=False):
         if token != self._load_token:
             return
         self.is_fetching_online = False
         self.online_wallpapers = items
-        self.lbl_count.set_text(f"Found {len(items)} online wallpapers ({provider.title()})")
+        if fallback_used:
+            self.lbl_count.set_markup(
+                f"<span color='#e6a100'>⚠ Wallhaven offline (Error 521).</span> Showing {len(items)} Openverse wallpapers"
+            )
+        else:
+            self.lbl_count.set_text(f"Found {len(items)} online wallpapers ({provider.title()})")
 
         for item in items:
             card = OnlineWallpaperCard(item, self.online_mgr)
@@ -1428,9 +1445,10 @@ class BodhiWallpaperWindow(Gtk.Window):
                         prov = self.combo_provider.get_active_id() or "wallhaven"
                         is_wallhaven = (prov == "wallhaven")
                         is_searchable = prov in ["wallhaven", "openverse"]
+                        has_categories = prov in ["wallhaven", "openverse"]
                         has_pagination = prov not in ["bing", "nasa"]
 
-                        self.combo_online_cat.set_visible(is_wallhaven)
+                        self.combo_online_cat.set_visible(has_categories)
                         self.combo_online_res.set_visible(is_wallhaven)
                         self.combo_online_sort.set_visible(is_wallhaven)
                         self.entry_online_query.set_visible(is_searchable)

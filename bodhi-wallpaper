@@ -284,9 +284,15 @@ def main():
             cat = args.online_category.lower()
             print(f"Searching online for category '{cat}'...")
             items = mgr.search_wallhaven(category_key=cat, sorting="random")
+            if not items:
+                print("[Notice] Wallhaven is unreachable (server offline). Falling back to Openverse...", file=sys.stderr)
+                items = mgr.fetch_openverse(query=cat, count=10)
         else:
             print(f"Searching online for '{args.online_search}'...")
             items = mgr.search_wallhaven(query=args.online_search, sorting="toplist")
+            if not items:
+                print("[Notice] Wallhaven is unreachable (server offline). Falling back to Openverse...", file=sys.stderr)
+                items = mgr.fetch_openverse(query=args.online_search, count=10)
 
         if items:
             pick = items[0]
